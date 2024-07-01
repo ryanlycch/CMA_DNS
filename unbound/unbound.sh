@@ -51,17 +51,19 @@ CACHE_SIZE_MSG="" # 4m
 CACHE_SIZE_NEG="" # 1m
 CACHE_SIZE_RRSET="" # 4m
 
+ENABLE_REDIS_CACHE="false"
+ENABLE_REDIS_CACHE_CHECK_WHEN_SERVE_EXPIRED="false"
 CUSTOM_REDIS_LOGICAL_DB="" # 0
 CUSTOM_REDIS_SERVER_HOST="" # 127.0.0.1
 CUSTOM_REDIS_SERVER_PASSWORD=""
 CUSTOM_REDIS_SERVER_PATH=""
 CUSTOM_REDIS_SERVER_PORT="" # 6379
-ENABLE_REDIS_CACHE_CHECK_WHEN_SERVE_EXPIRED="false"
-ENABLE_REDIS_CACHE="false"
+CUSTOM_SECRET_SEED=$(hostname) # default, $(hostname)
 
 CREATE_REDIS_INSTANCE="false"
+REDIS_DATABASES="" # 16
 REDIS_MAXMEMORY="" # 4MB
-REDIS_MAXMEMORY_POLICY="allkeys-lru" # noeviction, allkeys-lru, volatile-lru, allkeys-random, volatile-random, volatile-ttl, volatile-lfu, allkeys-lfu
+REDIS_MAXMEMORY_POLICY="" # noeviction, allkeys-lru, volatile-lru, allkeys-random, volatile-random, volatile-ttl, volatile-lfu, allkeys-lfu
 REDIS_PORT="" # 6379
 
 ENABLE_REMOTE_CONTROL="true"
@@ -239,6 +241,14 @@ function DownloadConfiguration() {
             sed -i "s/rrset-cache-size: 4m/rrset-cache-size: $(CaculateCacheSize $CACHE_SIZE_RRSET ${FORK_NUM_THREADS:-1})/g" "${DOCKER_PATH}/conf/unbound.conf"
         fi
 
+        if [ "${ENABLE_REDIS_CACHE}" == "false" ]; then
+            sed -i "/cachedb:/d;/#-/d;s/cachedb //g" "${DOCKER_PATH}/conf/unbound.conf"
+        else
+            sed -i "s/#-/  /g" "${DOCKER_PATH}/conf/unbound.conf"
+        fi
+        if [ "${ENABLE_REDIS_CACHE_CHECK_WHEN_SERVE_EXPIRED}" == "false" ]; then
+            sed -i "s/cachedb-check-when-serve-expired: yes/cachedb-check-when-serve-expired: no/g" "${DOCKER_PATH}/conf/unbound.conf"
+        fi
         if [ "${CUSTOM_REDIS_LOGICAL_DB}" != "" ]; then
             sed -i "s/redis-logical-db: 0/redis-logical-db: ${CUSTOM_REDIS_LOGICAL_DB}/g" "${DOCKER_PATH}/conf/unbound.conf"
         fi
@@ -254,13 +264,8 @@ function DownloadConfiguration() {
         if [ "${CUSTOM_REDIS_SERVER_PORT}" != "" ]; then
             sed -i "s/redis-server-port: 6379/redis-server-port: ${CUSTOM_REDIS_SERVER_PORT}/g" "${DOCKER_PATH}/conf/unbound.conf"
         fi
-        if [ "${ENABLE_REDIS_CACHE_CHECK_WHEN_SERVE_EXPIRED}" == "false" ]; then
-            sed -i "s/cachedb-check-when-serve-expired: yes/cachedb-check-when-serve-expired: no/g" "${DOCKER_PATH}/conf/unbound.conf"
-        fi
-        if [ "${ENABLE_REDIS_CACHE}" == "false" ]; then
-            sed -i "/cachedb:/d;/#-/d;s/cachedb //g" "${DOCKER_PATH}/conf/unbound.conf"
-        else
-            sed -i "s/#-/  /g" "${DOCKER_PATH}/conf/unbound.conf"
+        if [ "${CUSTOM_SECRET_SEED}" != "" ]; then
+            sed -i "s/secret-seed: 'default'/secret-seed: '${CUSTOM_SECRET_SEED}'/g" "${DOCKER_PATH}/conf/unbound.conf"
         fi
 
         if [ "${ENABLE_REMOTE_CONTROL}" == "false" ]; then
@@ -315,6 +320,7 @@ function CreateNewContainer() {
             --aof-use-rdb-preamble yes \
             --appendfsync everysec \
             --appendonly yes \
+            --databases ${REDIS_DATABASES:-16} \
             --dir /etc/redis/data \
             --lazyfree-lazy-eviction yes \
             --lazyfree-lazy-expire yes \
@@ -327,6 +333,7 @@ function CreateNewContainer() {
             --maxmemory-policy ${REDIS_MAXMEMORY_POLICY:-volatile-ttl} \
             --maxmemory-samples 10 \
             --port ${REDIS_PORT:-6379} \
+            --protected-mode no \
             --replica-lazy-flush yes
     fi
 
